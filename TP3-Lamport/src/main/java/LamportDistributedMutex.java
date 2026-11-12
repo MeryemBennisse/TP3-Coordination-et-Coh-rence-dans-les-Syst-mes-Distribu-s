@@ -7,6 +7,7 @@ public class LamportDistributedMutex {
     // Nombre total de processus simulés
     private static final int NB_PROCESSUS = 3;
     private static final double PROBABILITE_PERTE = 0.05;
+    private static final double PROBABILITE_PANNE = 0.1;
     private static final Comparator<Message> ORDRE_LAMPORT =
             Comparator.comparingInt((Message m) -> m.horloge).thenComparingInt(m -> m.idSource);
 
@@ -177,10 +178,15 @@ public class LamportDistributedMutex {
 
         @Override
         public void run() {
+            Random random = new Random();
             try {
                 while (!enPanne) {
                     demanderSectionCritique();
                     Thread.sleep(2000);
+                    if (random.nextDouble() < PROBABILITE_PANNE) {
+                        System.out.println("P" + id + " tombe en panne !");
+                        setEnPanne(true);
+                    }
                 }
             } catch (InterruptedException ignored) {
             }
@@ -207,13 +213,8 @@ public class LamportDistributedMutex {
         new Thread(p2).start();
         new Thread(p3).start();
 
-        // Après quelques secondes, simuler une panne
-        Thread.sleep(8000);
-        System.out.println("P2 tombe en panne !");
-        p2.setEnPanne(true);
-
         // Laisser tourner la simulation
-        Thread.sleep(10000);
+        Thread.sleep(18000);
 
         System.out.println("\n===== STATISTIQUES =====");
         System.out.println("Nombre total de messages échangés : " + canal.getNombreMessages());
