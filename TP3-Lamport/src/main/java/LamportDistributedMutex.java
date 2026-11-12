@@ -6,7 +6,7 @@ public class LamportDistributedMutex {
 
     // Nombre total de processus simulés
     private static final int NB_PROCESSUS = 3;
-
+    private static final double PROBABILITE_PERTE = 0.05;
     private static final Comparator<Message> ORDRE_LAMPORT =
             Comparator.comparingInt((Message m) -> m.horloge).thenComparingInt(m -> m.idSource);
 
@@ -14,12 +14,18 @@ public class LamportDistributedMutex {
     static class CanalReseau {
         private final Random random = new Random();
         private final AtomicInteger compteurMessages = new AtomicInteger(0);
+        private final AtomicInteger compteurPertes = new AtomicInteger(0);
         private final Map<String, ExecutorService> liens = new ConcurrentHashMap<>();
 
         // Envoi d’un message avec délai simulé
         public void envoyerMessage(Processus src, Processus dest, Message msg) {
             compteurMessages.incrementAndGet(); // Incrémenter le compteur global
             int delai = 300 + random.nextInt(500); // Délai aléatoire entre 300 et 800 ms
+            if (random.nextDouble() < PROBABILITE_PERTE) {
+                compteurPertes.incrementAndGet();
+                System.out.println("Message " + msg.type + " de P" + src.id + " vers P" + dest.id + " perdu !");
+                return;
+            }
             liens.computeIfAbsent(src.id + "->" + dest.id, k -> Executors.newSingleThreadExecutor()).submit(() -> {
                 try {
                     Thread.sleep(delai); // Simule la latence du réseau
@@ -31,6 +37,9 @@ public class LamportDistributedMutex {
 
         public int getNombreMessages() {
             return compteurMessages.get();
+        }
+        public int getNombrePertes() {
+            return compteurPertes.get();
         }
     }
 
@@ -208,6 +217,7 @@ public class LamportDistributedMutex {
 
         System.out.println("\n===== STATISTIQUES =====");
         System.out.println("Nombre total de messages échangés : " + canal.getNombreMessages());
+        System.out.println("Nombre de messages perdus : " + canal.getNombrePertes());
         System.out.println("=========================");
         System.exit(0);
     }
