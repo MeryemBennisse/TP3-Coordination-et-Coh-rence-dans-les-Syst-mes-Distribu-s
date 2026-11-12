@@ -19,26 +19,17 @@ class Processus extends Thread {
     private int clock = 0;
     private List<Processus> autres;
     private Queue<Message> fileMessages = new ConcurrentLinkedQueue<>();
-    private boolean enSC = false;
     private Set<Integer> reponsesRecues = new HashSet<>();
     private List<Message> fileDemandes = new ArrayList<>();
 
-    public Processus(int id) {
-        this.id = id;
-    }
+    public Processus(int id) { this.id = id; }
 
-    public void setAutres(List<Processus> autres) {
-        this.autres = autres;
-    }
+    public void setAutres(List<Processus> autres) { this.autres = autres; }
 
-    private void tick() { clock++; }
+    private synchronized void tick() { clock++; }
 
-    private void majHorloge(int autreHorloge) {
+    private synchronized void majHorloge(int autreHorloge) {
         clock = Math.max(clock, autreHorloge) + 1;
-    }
-
-    private void envoyer(Message m, Processus dest) {
-        dest.recoitMessage(m);
     }
 
     public synchronized void recoitMessage(Message m) {
@@ -49,39 +40,51 @@ class Processus extends Thread {
     private void broadcast(Message.Type type) {
         tick();
         Message m = new Message(type, id, clock);
-        for (Processus p : autres) {
+        for (Processus p : autres)
             if (p.id != this.id)
-                envoyer(m, p);
+                p.recoitMessage(m);
+    }
+
+    private boolean estPremierDansFile() {
+        if (fileDemandes.isEmpty()) return false;
+        Message moi = null;
+        for (Message m : fileDemandes)
+            if (m.senderId == id) { moi = m; break; }
+        if (moi == null) return false;
+        for (Message m : fileDemandes) {
+            if (m.senderId != id) {
+                if (m.timestamp < moi.timestamp) return false;
+                if (m.timestamp == moi.timestamp && m.senderId < id) return false;
+            }
         }
+        return true;
     }
 
     private void demandeSC() throws InterruptedException {
-        System.out.println("Processus " + id + " demande SC à t=" + clock);
         tick();
         Message demande = new Message(Message.Type.REQUEST, id, clock);
-        fileDemandes.add(demande);
+        synchronized (this) { fileDemandes.add(demande); }
+        System.out.println("Processus " + id + " demande SC à t=" + clock);
         broadcast(Message.Type.REQUEST);
         reponsesRecues.clear();
         reponsesRecues.add(id);
 
-        while (reponsesRecues.size() < autres.size()) {
+        while (reponsesRecues.size() < autres.size() || !estPremierDansFile()) {
             traiterMessages();
-            Thread.sleep(100);
+            Thread.sleep(50);
         }
         entrerSC();
     }
 
     private void entrerSC() throws InterruptedException {
-        enSC = true;
         System.out.println("==> Processus " + id + " entre en SC (t=" + clock + ")");
         Thread.sleep(1000);
         sortirSC();
     }
 
     private void sortirSC() {
-        enSC = false;
         System.out.println("<== Processus " + id + " quitte SC (t=" + clock + ")");
-        fileDemandes.removeIf(m -> m.senderId == id);
+        synchronized (this) { fileDemandes.removeIf(m -> m.senderId == id); }
         broadcast(Message.Type.RELEASE);
     }
 
@@ -90,23 +93,19 @@ class Processus extends Thread {
             Message m = fileMessages.poll();
             switch (m.type) {
                 case REQUEST:
-                    fileDemandes.add(m);
-                    envoyer(new Message(Message.Type.REPLY, id, clock), getProcessus(m.senderId));
+                    synchronized (this) { fileDemandes.add(m); }
+                    tick();
+                    autres.stream().filter(p -> p.id == m.senderId).findFirst()
+                            .ifPresent(p -> p.recoitMessage(new Message(Message.Type.REPLY, id, clock)));
                     break;
                 case REPLY:
                     reponsesRecues.add(m.senderId);
                     break;
                 case RELEASE:
-                    fileDemandes.removeIf(x -> x.senderId == m.senderId);
+                    synchronized (this) { fileDemandes.removeIf(x -> x.senderId == m.senderId); }
                     break;
             }
         }
-    }
-
-    private Processus getProcessus(int id) {
-        for (Processus p : autres)
-            if (p.id == id) return p;
-        return null;
     }
 
     @Override
@@ -127,11 +126,7 @@ public class LamportExclusion {
         int N = 3;
         List<Processus> liste = new ArrayList<>();
         for (int i = 0; i < N; i++) liste.add(new Processus(i));
-
-        for (Processus p : liste)
-            p.setAutres(liste);
-
-        for (Processus p : liste)
-            p.start();
+        for (Processus p : liste) p.setAutres(liste);
+        for (Processus p : liste) p.start();
     }
 }
