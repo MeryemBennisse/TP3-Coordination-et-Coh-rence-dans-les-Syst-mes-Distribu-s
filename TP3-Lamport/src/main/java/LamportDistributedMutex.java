@@ -1,13 +1,15 @@
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
-
+import java.util.concurrent.atomic.AtomicLong;
 public class LamportDistributedMutex {
 
     // Nombre total de processus simulés
     private static final int NB_PROCESSUS = 3;
     private static final double PROBABILITE_PERTE = 0.05;
     private static final double PROBABILITE_PANNE = 0.1;
+    private static final AtomicLong tempsAttenteTotal = new AtomicLong(0);
+    private static final AtomicInteger nbAccesSC = new AtomicInteger(0);
     private static final Comparator<Message> ORDRE_LAMPORT =
             Comparator.comparingInt((Message m) -> m.horloge).thenComparingInt(m -> m.idSource);
 
@@ -132,6 +134,7 @@ public class LamportDistributedMutex {
         public void demanderSectionCritique() throws InterruptedException {
             if (enPanne) return;
             System.out.println("P" + id + " demande la section critique");
+            long debut = System.currentTimeMillis();
             reponsesRecues.clear();
             fileRequetes.add(diffuserMessage(TypeMessage.REQUEST));
             // Attente des réponses de tous les autres
@@ -146,6 +149,9 @@ public class LamportDistributedMutex {
                 Thread.sleep(100);
             }
             if (enPanne) return;
+            long attente = System.currentTimeMillis() - debut;
+            tempsAttenteTotal.addAndGet(attente);
+            nbAccesSC.incrementAndGet();
             entrerSectionCritique();
             if (enPanne) return;
             sortirSectionCritique();
@@ -219,6 +225,9 @@ public class LamportDistributedMutex {
         System.out.println("\n===== STATISTIQUES =====");
         System.out.println("Nombre total de messages échangés : " + canal.getNombreMessages());
         System.out.println("Nombre de messages perdus : " + canal.getNombrePertes());
+        System.out.println("Nombre d'accès à la SC : " + nbAccesSC.get());
+        System.out.println("Temps moyen d'attente pour entrer en SC : "
+                + (nbAccesSC.get() == 0 ? 0 : tempsAttenteTotal.get() / nbAccesSC.get()) + " ms");
         System.out.println("=========================");
         System.exit(0);
     }
