@@ -204,25 +204,26 @@ public class LamportDistributedMutex {
         CanalReseau canal = new CanalReseau();
 
         // Création des processus
-        Processus p1 = new Processus(1, canal);
-        Processus p2 = new Processus(2, canal);
-        Processus p3 = new Processus(3, canal);
+        List<Processus> tous = new ArrayList<>();
+        for (int i = 1; i <= NB_PROCESSUS; i++) {
+            tous.add(new Processus(i, canal));
+        }
 
         // Configuration du réseau (chaque processus connaît les autres)
-        List<Processus> tous = Arrays.asList(p1, p2, p3);
         for (Processus p : tous) {
             p.autres = new ArrayList<>(tous);
         }
 
         // Démarrage des threads
-        new Thread(p1).start();
-        new Thread(p2).start();
-        new Thread(p3).start();
+        for (Processus p : tous) {
+            new Thread(p).start();
+        }
 
         // Laisser tourner la simulation
         Thread.sleep(18000);
 
         System.out.println("\n===== STATISTIQUES =====");
+        System.out.println("Nombre de processus : " + NB_PROCESSUS);
         System.out.println("Nombre total de messages échangés : " + canal.getNombreMessages());
         System.out.println("Nombre de messages perdus : " + canal.getNombrePertes());
         System.out.println("Nombre d'accès à la SC : " + nbAccesSC.get());
